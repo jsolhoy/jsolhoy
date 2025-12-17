@@ -33,13 +33,27 @@ class AngryMetalGuyScraper(BaseScraper):
     Score is typically shown as "Rating: X.X/5.0" in the review.
     """
 
-    # Pattern to match score in review content
+    # Pattern to match numeric score in review content
     SCORE_PATTERNS = [
         r"Rating:\s*(\d+(?:\.\d+)?)\s*/\s*5(?:\.0)?",
         r"(\d+(?:\.\d+)?)\s*/\s*5\.0\s*$",
         r"Score:\s*(\d+(?:\.\d+)?)\s*/\s*5",
         r"(\d+(?:\.\d+)?)/5\.0",
     ]
+
+    # Map text ratings to numeric scores (AMG uses text like "Rating: Great")
+    TEXT_RATING_MAP = {
+        "iconic": 5.0,
+        "excellent": 4.5,
+        "great": 4.0,
+        "very good": 3.5,
+        "good": 3.0,
+        "mixed": 2.5,
+        "disappointing": 2.0,
+        "bad": 1.5,
+        "embarrassing": 1.0,
+        "unlistenable": 0.5,
+    }
 
     def __init__(self, config: SiteConfig):
         super().__init__(config)
@@ -146,7 +160,8 @@ class AngryMetalGuyScraper(BaseScraper):
         return None, None
 
     def _extract_score(self, content: str) -> Optional[float]:
-        """Extract score from review content."""
+        """Extract score from review content (numeric or text rating)."""
+        # Try numeric patterns first
         for pattern in self.SCORE_PATTERNS:
             match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE)
             if match:
@@ -156,6 +171,15 @@ class AngryMetalGuyScraper(BaseScraper):
                         return score
                 except ValueError:
                     continue
+
+        # Try text rating pattern (e.g., "Rating: Great")
+        text_pattern = r"Rating:\s*([A-Za-z\s]+?)(?:\n|DR:|$)"
+        match = re.search(text_pattern, content, re.IGNORECASE)
+        if match:
+            rating_text = match.group(1).strip().lower()
+            if rating_text in self.TEXT_RATING_MAP:
+                return self.TEXT_RATING_MAP[rating_text]
+
         return None
 
     def _fetch_score_from_page(self, url: str) -> Optional[float]:
