@@ -1,0 +1,46 @@
+{
+  "sites": [
+    {
+      "name": "angry_metal_guy",
+      "display_name": "Angry Metal Guy",
+      "url": "https://www.angrymetalguy.com",
+      "rss_url": "https://www.angrymetalguy.com/feed/",
+      "score_scale": 5.0,
+      "min_score_for_threshold": 3.5,
+      "enabled": true,
+      "scraper_type": "rss_with_score"
+    },
+    {
+      "name": "doom_charts",
+      "display_name": "Doom Charts",
+      "url": "https://doomcharts.com",
+      "rss_url": "https://doomcharts.com/feed/",
+      "score_scale": null,
+      "min_score_for_threshold": null,
+      "enabled": true,
+      "scraper_type": "chart_ranking",
+      "top_n": 20
+    },
+    {
+      "name": "heavy_blog_is_heavy",
+      "display_name": "Heavy Blog Is Heavy",
+      "url": "https://www.heavyblogisheavy.com",
+      "rss_url": "https://www.heavyblogisheavy.com/feed/",
+      "score_scale": 5.0,
+      "min_score_for_threshold": 3.5,
+      "enabled": true,
+      "scraper_type": "rss_with_score"
+    },
+    {
+      "name": "nine_circles",
+      "display_name": "Nine Circles",
+      "url": "https://ninecircles.co",
+      "rss_url": "https://ninecircles.co/feed/",
+      "score_scale": null,
+      "min_score_for_threshold": null,
+      "enabled": false,
+      "scraper_type": "editorial"
+    }
+  ],
+  "score_threshold_percent": 70
+}
