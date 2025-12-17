@@ -79,7 +79,15 @@ class BaseScraper(ABC):
 
         console.print(f"[blue]Fetching RSS from {self.config.display_name}...[/blue]")
 
-        feed = feedparser.parse(self.config.rss_url)
+        # Fetch RSS with proper headers (sites block requests without User-Agent)
+        try:
+            response = self.session.get(self.config.rss_url, timeout=30)
+            response.raise_for_status()
+            feed = feedparser.parse(response.text)
+        except requests.RequestException as e:
+            console.print(f"[red]Error fetching RSS: {e}[/red]")
+            return []
+
         reviews = []
 
         for entry in feed.entries:
