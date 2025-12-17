@@ -32,8 +32,8 @@ class DoomChartsScraper(BaseScraper):
         r"Doom Charts?\s+(\w+)\s+(\d{4})",
     ]
 
-    # Pattern to match chart entries: "1. Artist – Album"
-    ENTRY_PATTERN = r"(\d+)\.\s*(.+?)\s*[–-]\s*(.+?)(?:\s*\(|$)"
+    # Pattern to match chart entries: "40. ARTIST - ALBUM | LABEL / NEW!"
+    ENTRY_PATTERN = r"(\d+)\.\s*(.+?)\s*[–-]\s*(.+?)(?:\s*[|/\(]|$|\n)"
 
     def __init__(self, config: SiteConfig):
         super().__init__(config)
@@ -129,8 +129,9 @@ class DoomChartsScraper(BaseScraper):
             album = match.group(3).strip()
 
             # Clean up common artifacts
-            album = re.sub(r"\s*\(.*$", "", album)  # Remove parentheticals
-            artist = artist.strip("*")  # Remove asterisks
+            album = re.sub(r"\s*[|/\(].*$", "", album)  # Remove label/NEW!/parentheticals
+            album = album.strip()
+            artist = artist.strip("*").strip()  # Remove asterisks
 
             if artist and album and position <= 100:
                 entries.append((position, artist, album))
