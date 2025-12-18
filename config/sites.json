@@ -11,6 +11,16 @@
       "scraper_type": "rss_with_score"
     },
     {
+      "name": "blabbermouth",
+      "display_name": "Blabbermouth",
+      "url": "https://www.blabbermouth.net",
+      "rss_url": "https://www.blabbermouth.net/feed/",
+      "score_scale": 10.0,
+      "min_score_for_threshold": 8.5,
+      "enabled": true,
+      "scraper_type": "rss_with_score_10"
+    },
+    {
       "name": "doom_charts",
       "display_name": "Doom Charts",
       "url": "https://doomcharts.com",

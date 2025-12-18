@@ -43,11 +43,13 @@ def get_scraper(config: SiteConfig) -> Optional[BaseScraper]:
     """
     # Import here to ensure scrapers are registered
     from src.scrapers.angry_metal_guy import AngryMetalGuyScraper
+    from src.scrapers.blabbermouth import BlabbermouthScraper
     from src.scrapers.doom_charts import DoomChartsScraper
 
     # Map scraper types to classes
     scraper_map: dict[str, Type[BaseScraper]] = {
         "rss_with_score": AngryMetalGuyScraper,
+        "rss_with_score_10": BlabbermouthScraper,
         "chart_ranking": DoomChartsScraper,
     }
 
