@@ -18,7 +18,8 @@ class BlabbermouthScraper(BaseScraper):
     Scraper for blabbermouth.net reviews.
 
     Blabbermouth uses a 10-point scale for album reviews.
-    Reviews are posted with titles like "ARTIST: 'Album' Album Review"
+    RSS feed titles are just album names - we need to fetch the page
+    to get the artist name and score.
     """
 
     # Patterns to match score in review content
@@ -42,10 +43,11 @@ class BlabbermouthScraper(BaseScraper):
         albums = []
 
         for review in reviews:
-            # Skip non-review posts
-            if not self._is_review(review.title, review.url):
+            # Skip non-review posts (check URL for /reviews/)
+            if "/reviews/" not in review.url.lower():
                 continue
 
+            console.print(f"[blue]Checking: {review.title}[/blue]")
             album = self.parse_review(review)
             if album:
                 albums.append(album)
@@ -56,38 +58,21 @@ class BlabbermouthScraper(BaseScraper):
         )
         return albums
 
-    def _is_review(self, title: str, url: str) -> bool:
-        """Check if a post is a review."""
-        title_lower = title.lower()
-        url_lower = url.lower()
-
-        # Check URL for review indicator
-        if "/reviews/" in url_lower or "/cd-reviews/" in url_lower:
-            return True
-
-        # Check title for review indicator
-        if "album review" in title_lower or "review:" in title_lower:
-            return True
-        if "' review" in title_lower or "\" review" in title_lower:
-            return True
-
-        return False
-
     def parse_review(self, review: ScrapedReview) -> Optional[Album]:
-        """Parse review content and extract album info with score."""
-        # Extract artist and album from title
-        artist, album_title = self._parse_title(review.title)
-        if not artist or not album_title:
-            console.print(f"[yellow]Could not parse title: {review.title}[/yellow]")
+        """Parse review by fetching the full page."""
+        # Fetch the full page to get artist, album, and score
+        soup = self.fetch_page(review.url)
+        if not soup:
             return None
 
-        # Try to get score from RSS content first
-        score = self._extract_score(review.content)
+        # Extract artist and album from page
+        artist, album_title = self._extract_artist_album_from_page(soup, review.title)
+        if not artist or not album_title:
+            console.print(f"[yellow]Could not find artist for: {review.title}[/yellow]")
+            return None
 
-        # If no score in RSS, fetch the full page
-        if score is None:
-            score = self._fetch_score_from_page(review.url)
-
+        # Extract score from page
+        score = self._extract_score_from_page(soup)
         if score is None:
             console.print(f"[yellow]No score found for: {review.title}[/yellow]")
             return None
@@ -104,8 +89,8 @@ class BlabbermouthScraper(BaseScraper):
         )
         album.normalize_score()
 
-        # Check threshold
-        if not self.meets_threshold(album.normalized_score, threshold=85):  # 8.5/10 = 85%
+        # Check threshold (8.5/10 = 85%)
+        if not self.meets_threshold(album.normalized_score, threshold=85):
             console.print(
                 f"[dim]Below threshold ({score}/{self.score_scale}): "
                 f"{album.display_name}[/dim]"
@@ -118,38 +103,96 @@ class BlabbermouthScraper(BaseScraper):
         )
         return album
 
-    def _parse_title(self, title: str) -> tuple[Optional[str], Optional[str]]:
+    def _extract_artist_album_from_page(
+        self, soup, fallback_title: str
+    ) -> tuple[Optional[str], Optional[str]]:
         """
-        Parse artist and album from review title.
+        Extract artist and album name from the review page.
 
-        Common formats:
-        - "ARTIST: 'Album Title' Album Review"
-        - "ARTIST - 'Album Title' Review"
-        - "ARTIST: \"Album Title\" Album Review"
+        Blabbermouth typically has the format in the page title or header:
+        "ARTIST - 'Album Name' Review"
         """
-        # Pattern: ARTIST: 'Album' or ARTIST: "Album"
+        # Try page title first
+        title_tag = soup.find("title")
+        if title_tag:
+            title_text = title_tag.get_text()
+            artist, album = self._parse_page_title(title_text)
+            if artist and album:
+                return artist, album
+
+        # Try h1 header
+        h1 = soup.find("h1")
+        if h1:
+            h1_text = h1.get_text()
+            artist, album = self._parse_page_title(h1_text)
+            if artist and album:
+                return artist, album
+
+        # Try meta tags
+        og_title = soup.find("meta", property="og:title")
+        if og_title and og_title.get("content"):
+            artist, album = self._parse_page_title(og_title["content"])
+            if artist and album:
+                return artist, album
+
+        # Fallback: use the RSS title as album name, try to find artist in content
+        article = soup.find("article") or soup.find(class_=re.compile(r"entry|post|review", re.I))
+        if article:
+            text = article.get_text()[:500]
+            # Look for pattern like "ARTIST's new album" or "by ARTIST"
+            match = re.search(r"by\s+([A-Z][A-Za-z\s&]+?)(?:'s|,|\s+is|\s+has|\s+are)", text)
+            if match:
+                return match.group(1).strip(), fallback_title
+
+        return None, fallback_title
+
+    def _parse_page_title(self, title: str) -> tuple[Optional[str], Optional[str]]:
+        """Parse artist and album from page title."""
+        # Remove site name suffix
+        title = re.sub(r"\s*[-|]\s*BLABBERMOUTH\.NET.*$", "", title, flags=re.IGNORECASE)
+        title = re.sub(r"\s*[-|]\s*blabbermouth.*$", "", title, flags=re.IGNORECASE)
+
+        # Pattern: ARTIST - 'Album' or ARTIST - "Album"
         match = re.match(
-            r"^(.+?):\s*['\"](.+?)['\"](?:\s+Album)?\s+Review",
-            title,
-            re.IGNORECASE
+            r"^(.+?)\s*[-–]\s*['\"](.+?)['\"]",
+            title
         )
         if match:
             return match.group(1).strip(), match.group(2).strip()
 
-        # Pattern: ARTIST - 'Album' Review
+        # Pattern: ARTIST: 'Album'
         match = re.match(
-            r"^(.+?)\s*[-–]\s*['\"](.+?)['\"](?:\s+Album)?\s+Review",
-            title,
-            re.IGNORECASE
+            r"^(.+?):\s*['\"](.+?)['\"]",
+            title
         )
         if match:
             return match.group(1).strip(), match.group(2).strip()
 
-        # Fallback: use base class method
-        return self.extract_artist_album(title)
+        # Pattern: 'Album' by ARTIST
+        match = re.match(
+            r"^['\"](.+?)['\"]\s+(?:by|from)\s+(.+?)(?:\s+Review)?$",
+            title,
+            re.IGNORECASE
+        )
+        if match:
+            return match.group(2).strip(), match.group(1).strip()
+
+        return None, None
+
+    def _extract_score_from_page(self, soup) -> Optional[float]:
+        """Extract score from the review page."""
+        # Look for score in review content
+        content = soup.find(class_=re.compile(r"entry-content|post-content|review", re.I))
+        if content:
+            score = self._extract_score(content.get_text())
+            if score:
+                return score
+
+        # Try the entire page
+        return self._extract_score(soup.get_text())
 
     def _extract_score(self, content: str) -> Optional[float]:
-        """Extract score from review content."""
+        """Extract score from text content."""
         for pattern in self.SCORE_PATTERNS:
             match = re.search(pattern, content, re.IGNORECASE)
             if match:
@@ -160,19 +203,3 @@ class BlabbermouthScraper(BaseScraper):
                 except ValueError:
                     continue
         return None
-
-    def _fetch_score_from_page(self, url: str) -> Optional[float]:
-        """Fetch the full review page to extract the score."""
-        soup = self.fetch_page(url)
-        if not soup:
-            return None
-
-        # Look for score in review content
-        content = soup.find(class_=re.compile(r"entry-content|post-content|review", re.I))
-        if content:
-            score = self._extract_score(content.get_text())
-            if score:
-                return score
-
-        # Try the entire page
-        return self._extract_score(soup.get_text())
