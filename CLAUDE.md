@@ -84,6 +84,7 @@ ruff format src/ tests/
 │   │   ├── __init__.py
 │   │   ├── base.py          # BaseScraper abstract class
 │   │   ├── angry_metal_guy.py  # Angry Metal Guy scraper (5-point scale)
+│   │   ├── blabbermouth.py  # Blabbermouth scraper (10-point scale)
 │   │   ├── doom_charts.py   # Doom Charts scraper (ranking-based)
 │   │   └── registry.py      # Scraper factory
 │   └── spotify/
@@ -133,6 +134,9 @@ ruff format src/ tests/
 | Angry Metal Guy | RSS + Score | 0-5.0 | 3.5 (70%) |
 | Heavy Blog Is Heavy | RSS + Score | 0-5.0 | 3.5 (70%) |
 | Doom Charts | Monthly Ranking | Top 20 | All charted |
+| Blabbermouth | RSS + Score | 0-10 | 8.5 (85%) |
+
+**Note on Blabbermouth**: RSS feed is limited (~3 reviews visible at a time). Run daily to catch reviews before they drop off.
 
 ### State Management
 
