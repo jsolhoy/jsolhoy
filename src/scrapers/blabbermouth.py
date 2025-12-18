@@ -1,5 +1,6 @@
 """Scraper for Blabbermouth.net reviews."""
 
+import json
 import re
 from datetime import datetime, timedelta
 from typing import Optional
@@ -109,42 +110,76 @@ class BlabbermouthScraper(BaseScraper):
         """
         Extract artist and album name from the review page.
 
-        Blabbermouth typically has the format in the page title or header:
-        "ARTIST - 'Album Name' Review"
+        Blabbermouth page titles are: "Reviews - [Album Title] - BLABBERMOUTH.NET"
+        The artist name must be extracted from the page content.
         """
-        # Try page title first
+        album_title = fallback_title
+
+        # Try to get album from page title (format: "Reviews - Album Title - BLABBERMOUTH.NET")
         title_tag = soup.find("title")
         if title_tag:
             title_text = title_tag.get_text()
-            artist, album = self._parse_page_title(title_text)
-            if artist and album:
-                return artist, album
+            # Extract album from "Reviews - Album Title - BLABBERMOUTH.NET"
+            match = re.match(
+                r"^Reviews?\s*[-–]\s*(.+?)\s*[-–]\s*BLABBERMOUTH",
+                title_text,
+                re.IGNORECASE
+            )
+            if match:
+                album_title = match.group(1).strip()
 
-        # Try h1 header
-        h1 = soup.find("h1")
-        if h1:
-            h1_text = h1.get_text()
-            artist, album = self._parse_page_title(h1_text)
-            if artist and album:
-                return artist, album
+        # Try to find artist from JSON-LD structured data
+        scripts = soup.find_all("script", type="application/ld+json")
+        for script in scripts:
+            try:
+                data = json.loads(script.string)
+                if isinstance(data, dict):
+                    # Look for author/creator fields that might have artist
+                    if "about" in data and isinstance(data["about"], dict):
+                        if "name" in data["about"]:
+                            return data["about"]["name"], album_title
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                pass
 
-        # Try meta tags
-        og_title = soup.find("meta", property="og:title")
-        if og_title and og_title.get("content"):
-            artist, album = self._parse_page_title(og_title["content"])
-            if artist and album:
-                return artist, album
-
-        # Fallback: use the RSS title as album name, try to find artist in content
+        # Look for artist in the article content
         article = soup.find("article") or soup.find(class_=re.compile(r"entry|post|review", re.I))
         if article:
-            text = article.get_text()[:500]
-            # Look for pattern like "ARTIST's new album" or "by ARTIST"
-            match = re.search(r"by\s+([A-Z][A-Za-z\s&]+?)(?:'s|,|\s+is|\s+has|\s+are)", text)
-            if match:
-                return match.group(1).strip(), fallback_title
+            text = article.get_text()
 
-        return None, fallback_title
+            # Pattern 1: Look for ALL CAPS band name at start of paragraph
+            # Many metal reviews start with "BAND NAME is/are/has/have..."
+            caps_match = re.search(
+                r"(?:^|\n)\s*([A-Z][A-Z\s]+?)(?:'s|'s|\s+is\b|\s+are\b|\s+has\b|\s+have\b|\s+return)",
+                text[:1000]
+            )
+            if caps_match:
+                artist = caps_match.group(1).strip()
+                # Clean up and validate - should be 2+ characters, not common words
+                if len(artist) >= 2 and artist.upper() not in ["THE", "THIS", "THAT", "WITH"]:
+                    return artist, album_title
+
+            # Pattern 2: Look for "by ARTIST" or "from ARTIST"
+            by_match = re.search(
+                r"(?:by|from)\s+([A-Z][A-Z\s]+?)(?:,|\.|'s|\s+is\b|\s+are\b|\s+has\b)",
+                text[:1000],
+                re.IGNORECASE
+            )
+            if by_match:
+                artist = by_match.group(1).strip()
+                if len(artist) >= 2:
+                    return artist.upper(), album_title
+
+            # Pattern 3: Look for possessive form "ARTIST's new/latest/debut album"
+            poss_match = re.search(
+                r"([A-Z][A-Za-z\s&]+?)(?:'s|'s)\s+(?:new|latest|debut|sophomore|first|second|third)",
+                text[:1000]
+            )
+            if poss_match:
+                artist = poss_match.group(1).strip()
+                if len(artist) >= 2:
+                    return artist, album_title
+
+        return None, album_title
 
     def _parse_page_title(self, title: str) -> tuple[Optional[str], Optional[str]]:
         """Parse artist and album from page title."""
