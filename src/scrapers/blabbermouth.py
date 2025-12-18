@@ -110,8 +110,9 @@ class BlabbermouthScraper(BaseScraper):
         """
         Extract artist and album name from the review page.
 
-        Blabbermouth page titles are: "Reviews - [Album Title] - BLABBERMOUTH.NET"
-        The artist name must be extracted from the page content.
+        Blabbermouth structure:
+        - Page title: "Reviews - [Album Title] - BLABBERMOUTH.NET"
+        - H1 tag: Artist name
         """
         album_title = fallback_title
 
@@ -128,56 +129,24 @@ class BlabbermouthScraper(BaseScraper):
             if match:
                 album_title = match.group(1).strip()
 
-        # Try to find artist from JSON-LD structured data
+        # Artist is in the H1 tag on Blabbermouth
+        h1 = soup.find("h1")
+        if h1:
+            artist = h1.get_text().strip()
+            if artist:
+                return artist, album_title
+
+        # Fallback: Try to find artist from JSON-LD structured data
         scripts = soup.find_all("script", type="application/ld+json")
         for script in scripts:
             try:
                 data = json.loads(script.string)
                 if isinstance(data, dict):
-                    # Look for author/creator fields that might have artist
                     if "about" in data and isinstance(data["about"], dict):
                         if "name" in data["about"]:
                             return data["about"]["name"], album_title
             except (json.JSONDecodeError, TypeError, AttributeError):
                 pass
-
-        # Look for artist in the article content
-        article = soup.find("article") or soup.find(class_=re.compile(r"entry|post|review", re.I))
-        if article:
-            text = article.get_text()
-
-            # Pattern 1: Look for ALL CAPS band name at start of paragraph
-            # Many metal reviews start with "BAND NAME is/are/has/have..."
-            caps_match = re.search(
-                r"(?:^|\n)\s*([A-Z][A-Z\s]+?)(?:'s|'s|\s+is\b|\s+are\b|\s+has\b|\s+have\b|\s+return)",
-                text[:1000]
-            )
-            if caps_match:
-                artist = caps_match.group(1).strip()
-                # Clean up and validate - should be 2+ characters, not common words
-                if len(artist) >= 2 and artist.upper() not in ["THE", "THIS", "THAT", "WITH"]:
-                    return artist, album_title
-
-            # Pattern 2: Look for "by ARTIST" or "from ARTIST"
-            by_match = re.search(
-                r"(?:by|from)\s+([A-Z][A-Z\s]+?)(?:,|\.|'s|\s+is\b|\s+are\b|\s+has\b)",
-                text[:1000],
-                re.IGNORECASE
-            )
-            if by_match:
-                artist = by_match.group(1).strip()
-                if len(artist) >= 2:
-                    return artist.upper(), album_title
-
-            # Pattern 3: Look for possessive form "ARTIST's new/latest/debut album"
-            poss_match = re.search(
-                r"([A-Z][A-Za-z\s&]+?)(?:'s|'s)\s+(?:new|latest|debut|sophomore|first|second|third)",
-                text[:1000]
-            )
-            if poss_match:
-                artist = poss_match.group(1).strip()
-                if len(artist) >= 2:
-                    return artist, album_title
 
         return None, album_title
 
